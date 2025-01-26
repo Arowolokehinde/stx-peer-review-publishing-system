@@ -173,3 +173,104 @@
         (ok (map-delete Reviewers { reviewer: tx-sender }))
     )
 )
+
+;; Challenge a review
+(define-public (challenge-review (paper-id uint) (reviewer principal) (reason (string-ascii 256)))
+    (let (
+        (review-data (unwrap! (map-get? Reviews { paper-id: paper-id, reviewer: reviewer }) ERR-PAPER-NOT-FOUND))
+        (challenge-stake (var-get min-stake))
+    )
+        ;; Additional validations
+        (asserts! (> (len reason) u0) ERR-EMPTY-REASON)
+        (asserts! (not (is-eq reviewer tx-sender)) ERR-SELF-CHALLENGE)
+        (asserts! (>= (stx-get-balance tx-sender) challenge-stake) ERR-INSUFFICIENT-BALANCE)
+        
+        (try! (stx-transfer? challenge-stake tx-sender (as-contract tx-sender)))
+        
+        (map-set Reviews
+            { paper-id: paper-id, reviewer: reviewer }
+            {
+                score: (get score review-data),
+                comment-hash: (get comment-hash review-data),
+                timestamp: (get timestamp review-data),
+                status: "challenged"
+            }
+        )
+        (ok true)
+    )
+)
+
+;; Update paper status
+(define-public (update-paper-status (paper-id uint) (new-status (string-ascii 20)))
+    (let (
+        (paper-data (unwrap! (map-get? Papers { paper-id: paper-id }) ERR-PAPER-NOT-FOUND))
+    )
+        ;; Additional validations
+        (asserts! (> (len new-status) u0) ERR-EMPTY-STATUS)
+        (asserts! (or (is-eq new-status "pending") 
+                     (is-eq new-status "reviewed")
+                     (is-eq new-status "rejected")
+                     (is-eq new-status "accepted")) ERR-INVALID-STATUS)
+        (asserts! (is-eq tx-sender (get author paper-data)) ERR-NOT-AUTHORIZED)
+        
+        (ok (map-set Papers
+            { paper-id: paper-id }
+            {
+                author: (get author paper-data),
+                ipfs-hash: (get ipfs-hash paper-data),
+                status: new-status,
+                review-count: (get review-count paper-data),
+                total-score: (get total-score paper-data),
+                timestamp: (get timestamp paper-data)
+            }
+        ))
+    )
+)
+
+;; Read-only functions
+(define-read-only (get-paper-details (paper-id uint))
+    (map-get? Papers { paper-id: paper-id })
+)
+
+(define-read-only (get-review-details (paper-id uint) (reviewer principal))
+    (map-get? Reviews { paper-id: paper-id, reviewer: reviewer })
+)
+
+(define-read-only (get-reviewer-details (reviewer principal))
+    (map-get? Reviewers { reviewer: reviewer })
+)
+
+(define-read-only (get-reviewer-earnings (reviewer principal))
+    (match (map-get? Reviewers { reviewer: reviewer })
+        reviewer-data (ok (* (get review-count reviewer-data) (var-get review-reward)))
+        ERR-NOT-REVIEWER)
+)
+
+;; Administrative functions
+(define-public (update-settings 
+    (new-min-stake uint)
+    (new-review-reward uint))
+    (begin
+        (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+        (var-set min-stake new-min-stake)
+        (var-set review-reward new-review-reward)
+        (ok true)
+    )
+)
+
+(define-public (pause-reviewer (reviewer principal))
+    (let (
+        (reviewer-data (unwrap! (map-get? Reviewers { reviewer: reviewer }) ERR-NOT-REVIEWER))
+    )
+        (asserts! (is-contract-owner) ERR-NOT-AUTHORIZED)
+        (ok (map-set Reviewers
+            { reviewer: reviewer }
+            {
+                stake: (get stake reviewer-data),
+                review-count: (get review-count reviewer-data),
+                reputation: (get reputation reviewer-data),
+                status: "paused"
+            }
+        ))
+    )
+)
