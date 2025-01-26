@@ -1,0 +1,19 @@
+[project]
+name = 'stx-peer-review-publishing'
+description = ''
+authors = []
+telemetry = true
+cache_dir = './.cache'
+requirements = []
+[contracts.stx-peer-review-publishibg]
+path = 'contracts/stx-peer-review-publishibg.clar'
+clarity_version = 3
+epoch = 3.1
+[repl.analysis]
+passes = ['check_checker']
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
